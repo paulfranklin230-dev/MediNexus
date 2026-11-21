@@ -1,0 +1,335 @@
+function Appointments() {
+  const [items, setItems] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [isPatient, setIsPatient] = useState(false);
+  const [loadingPatients, setLoadingPatients] = useState(true);
+  const [show, setShow] = useState(false);
+  const [form, setForm] = useState({
+    patient: '',
+    type: 'General consultation',
+    date: '',
+    time: '',
+    notes: ''
+  });
+  const [msg, setMsg] = useState('');
+
+  async function load() {
+    try {
+      const { data } = await api.get('/appointments');
+      setItems(data);
+    } catch (err) {
+      setMsg(err.response?.data?.message || 'Unable to load appointments.');
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+
+    load();
+
+    async function loadPatients() {
+      try {
+        const { data } = await api.get('/patients/mine');
+
+        if (!active) return;
+
+        setIsPatient(true);
+        setPatients([data]);
+        setForm(prev => ({
+          ...prev,
+          patient: data._id
+        }));
+      } catch (err) {
+        if (!active) return;
+
+        if (![403, 404].includes(err.response?.status)) {
+          setMsg('Unable to load patient information.');
+          setLoadingPatients(false);
+          return;
+        }
+
+        try {
+          const { data } = await api.get('/patients');
+
+          if (!active) return;
+
+          setIsPatient(false);
+          setPatients(data);
+        } catch (error) {
+          if (active) {
+            setMsg(
+              error.response?.data?.message ||
+              'Unable to load patient list.'
+            );
+          }
+        }
+      } finally {
+        if (active) setLoadingPatients(false);
+      }
+    }
+
+    loadPatients();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function add(e) {
+    e.preventDefault();
+    setMsg('');
+
+    if (!form.patient) {
+      setMsg('Please select a patient.');
+      return;
+    }
+
+    try {
+      await api.post('/appointments', form);
+      setShow(false);
+      setForm(prev => ({
+        ...prev,
+        type: 'General consultation',
+        date: '',
+        time: '',
+        notes: ''
+      }));
+      await load();
+    } catch (err) {
+      setMsg(
+        err.response?.data?.message ||
+        'Could not book appointment.'
+      );
+    }
+  }
+
+  async function status(id, s) {
+    try {
+      await api.patch(`/appointments/${id}/status`, {
+        status: s
+      });
+      await load();
+    } catch (err) {
+      setMsg(
+        err.response?.data?.message ||
+        'Unable to update appointment.'
+      );
+    }
+  }
+
+  return (
+    <>
+      <PageTitle
+        eyebrow="CARE COORDINATION"
+        title="Appointments"
+        desc="Coordinate patient visits and appointment status."
+        action={
+          <button
+            className="primary"
+            onClick={() => {
+              setMsg('');
+              setShow(!show);
+            }}
+          >
+            <Plus size={17} />
+            New appointment
+          </button>
+        }
+      />
+
+      {show && (
+        <form className="panel form-grid" onSubmit={add}>
+          <h3 className="span-2">Book appointment</h3>
+
+          {!isPatient ? (
+            <label>
+              Patient
+              <select
+                required
+                value={form.patient}
+                onChange={e =>
+                  setForm({
+                    ...form,
+                    patient: e.target.value
+                  })
+                }
+              >
+                <option value="">Select patient</option>
+
+                {patients.map(p => (
+                  <option key={p._id} value={p._id}>
+                    {p.fullName}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label>
+              Patient
+              <input
+                value={patients[0]?.fullName || 'Loading...'}
+                readOnly
+              />
+            </label>
+          )}
+
+          <label>
+            Appointment type
+            <input
+              required
+              value={form.type}
+              onChange={e =>
+                setForm({
+                  ...form,
+                  type: e.target.value
+                })
+              }
+            />
+          </label>
+
+          <label>
+            Date
+            <input
+              required
+              type="date"
+              min={new Date().toISOString().slice(0, 10)}
+              value={form.date}
+              onChange={e =>
+                setForm({
+                  ...form,
+                  date: e.target.value
+                })
+              }
+            />
+          </label>
+
+          <label>
+            Time
+            <input
+              type="time"
+              value={form.time}
+              onChange={e =>
+                setForm({
+                  ...form,
+                  time: e.target.value
+                })
+              }
+            />
+          </label>
+
+          <label className="span-2">
+            Notes
+            <textarea
+              value={form.notes}
+              onChange={e =>
+                setForm({
+                  ...form,
+                  notes: e.target.value
+                })
+              }
+            />
+          </label>
+
+          <div className="span-2 form-actions">
+            <button
+              className="primary"
+              disabled={loadingPatients || !form.patient}
+            >
+              Create appointment
+            </button>
+
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setShow(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {msg && <div className="error">{msg}</div>}
+
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h3>Appointment schedule</h3>
+            <p>{items.length} appointment entries</p>
+          </div>
+        </div>
+
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>PATIENT</th>
+                <th>APPOINTMENT</th>
+                <th>DATE & TIME</th>
+                <th>STATUS</th>
+                <th>ACTIONS</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {items.map(a => (
+                <tr key={a._id}>
+                  <td>
+                    <b>{a.patient?.fullName || 'Patient'}</b>
+                  </td>
+
+                  <td>{a.type}</td>
+
+                  <td>
+                    {moneyDate(a.date)}
+                    {' · '}
+                    {a.time || '—'}
+                  </td>
+
+                  <td>
+                    <span className={`status ${a.status.toLowerCase()}`}>
+                      {a.status}
+                    </span>
+                  </td>
+
+                  <td>
+                    {a.status === 'Pending' ? (
+                      <div className="inline-actions">
+                        <button
+                          className="approve"
+                          onClick={() => status(a._id, 'Confirmed')}
+                        >
+                          Confirm
+                        </button>
+
+                        <button
+                          className="reject"
+                          onClick={() => status(a._id, 'Cancelled')}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : a.status === 'Confirmed' ? (
+                      <button
+                        className="secondary tiny"
+                        onClick={() => status(a._id, 'Completed')}
+                      >
+                        Complete
+                      </button>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {!items.length && (
+            <Empty text="No appointments scheduled." />
+          )}
+        </div>
+      </section>
+    </>
+  );
+}

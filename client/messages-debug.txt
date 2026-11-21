@@ -1,0 +1,9 @@
+function Messages(){const[patients,setPatients]=useState([]),[patient,setPatient]=useState(''),[items,setItems]=useState([]),[content,setContent]=useState('');
+useEffect(()=>{api.get('/patients').then(x=>{setPatients(x.data);
+if(x.data[0])setPatient(x.data[0]._id)}).catch(()=>{})},[]);
+useEffect(()=>{if(patient)api.get(`/patients/${patient}/messages`).then(x=>setItems(x.data)).catch(()=>setItems([]))},[patient]);
+async function send(e){e.preventDefault();
+await api.post(`/patients/${patient}/messages`,{content,subject:'Care team message'});
+setContent('');
+const{data}=await api.get(`/patients/${patient}/messages`);
+setItems(data)}return <><PageTitle eyebrow="CARE TEAM COMMUNICATION" title="Messages" desc="Send and review patient communication."/><section className="panel"><label>Patient<select value={patient} onChange={e=>setPatient(e.target.value)}>{patients.map(p=><option value={p._id}>{p.fullName}</option>)}</select></label><div className="chat-list">{items.map(m=><div className={`chat-bubble ${m.senderRole==='patient'?'incoming':''}`}><small>{m.sender?.name||m.senderRole} · {moneyDate(m.createdAt)}</small><p>{m.content}</p></div>)}{!items.length&&<Empty text="No messages in this conversation."/>}</div><form className="chat-compose" onSubmit={send}><input required placeholder="Write a message…" value={content} onChange={e=>setContent(e.target.value)}/><button className="primary">Send</button></form></section></>}
